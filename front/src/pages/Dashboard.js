@@ -29,7 +29,7 @@ L.Icon.Default.mergeOptions({
   iconUrl: require('leaflet/dist/images/marker-icon.png'),
   shadowUrl: require('leaflet/dist/images/marker-shadow.png'),
 });
-// Компонент для рисования полигонов
+
 const DrawPolygon = ({ polygonPoints, setPolygonPoints, isDrawing }) => {
   useMapEvents({
     click(e) {
@@ -205,7 +205,7 @@ const Dashboard = () => {
               🌾 HarvestAI - Панель управления
             </Typography>
             <Typography color="text.secondary">
-              Добро пожаловать, {user?.full_name}! Управляйте вашими полями
+              Управляйте вашими полями
             </Typography>
           </Grid>
           <Grid item xs={12} md={6} sx={{ textAlign: { md: 'right' } }}>

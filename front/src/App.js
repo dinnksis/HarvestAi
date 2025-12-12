@@ -7,7 +7,7 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import FieldMap from './pages/FieldMap';
 import FertilizerMap from './pages/FertilizerMap';
-import HomePage from './pages/HomePage'; // НОВЫЙ КОМПОНЕНТ!
+import HomePage from './pages/HomePage';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 const theme = createTheme({
@@ -21,7 +21,7 @@ const theme = createTheme({
   },
 });
 
-// Компонент для защищенных маршрутов
+//для защищенных маршрутов
 const PrivateRoute = ({ children }) => {
   const { user } = useAuth();
   return user ? children : <Navigate to="/login" />;

@@ -23,7 +23,6 @@ import L from 'leaflet';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 
-// Фикс иконок для leaflet
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: require('leaflet/dist/images/marker-icon-2x.png'),
@@ -31,7 +30,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: require('leaflet/dist/images/marker-shadow.png'),
 });
 
-// Компонент для рисования полигонов (только для авторизованных)
+
 const DrawPolygon = ({ polygonPoints, setPolygonPoints, isDrawing, isAuthenticated }) => {
   useMapEvents({
     click(e) {
@@ -68,12 +67,11 @@ const HomePage = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Загружаем поля пользователя (только для авторизованных)
+  
   useEffect(() => {
     if (user) {
       fetchUserFields();
     } else {
-      // Если пользователь не авторизован, очищаем поля
       setFields([]);
     }
   }, [user]);

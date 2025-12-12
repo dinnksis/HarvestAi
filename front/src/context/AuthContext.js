@@ -17,7 +17,6 @@ export const AuthProvider = ({ children }) => {
         const decoded = jwtDecode(token);
         setUser(decoded);
         localStorage.setItem('token', token);
-        // Устанавливаем заголовок авторизации для axios
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       } catch (error) {
         console.error('Invalid token:', error);

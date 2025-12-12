@@ -8,21 +8,18 @@ import os
 
 from . import models, schemas, database
 
-# Security
+#security
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
-# ВРЕМЕННО: убираем хеширование для теста
+
 def verify_password(plain_password, hashed_password):
-    # Временная проверка - сравниваем как строки
     return plain_password == hashed_password
 
 def get_password_hash(password):
-    # Временное решение - возвращаем пароль как есть
-    # ВНИМАНИЕ: ТОЛЬКО ДЛЯ ТЕСТА!
     return password
 
 def get_user_by_email(db: Session, email: str):
@@ -32,8 +29,8 @@ def authenticate_user(db: Session, email: str, password: str):
     user = get_user_by_email(db, email)
     if not user:
         return False
-    # Временная проверка
-    if password != user.hashed_password:  # Теперь храним пароль как есть
+
+    if password != user.hashed_password: 
         return False
     return user
 
@@ -67,11 +64,11 @@ def get_current_user(db: Session = Depends(database.get_db), token: str = Depend
     return user
 
 def create_user(db: Session, user: schemas.UserCreate):
-    # Временное решение - сохраняем пароль как есть
-    hashed_password = get_password_hash(user.password)  # Фактически возвращает сам пароль
+    
+    hashed_password = get_password_hash(user.password)  
     db_user = models.User(
         email=user.email,
-        hashed_password=hashed_password,  # Теперь здесь plain password
+        hashed_password=hashed_password,
         full_name=user.full_name
     )
     db.add(db_user)

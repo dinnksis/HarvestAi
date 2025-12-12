@@ -21,7 +21,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Dependency
+#dependency
 def get_db():
     db = SessionLocal()
     try:
@@ -29,7 +29,7 @@ def get_db():
     finally:
         db.close()
 
-# Auth routes
+#auth 
 @app.post("/register", response_model=schemas.User)
 def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db_user = auth.get_user_by_email(db, email=user.email)
@@ -45,7 +45,7 @@ def login(form_data: schemas.UserLogin, db: Session = Depends(get_db)):
     access_token = auth.create_access_token(data={"sub": user.email})
     return {"access_token": access_token, "token_type": "bearer"}
 
-# Field routes
+#field 
 @app.post("/fields/", response_model=schemas.Field)
 def create_field(
     field: schemas.FieldCreate,
@@ -76,7 +76,7 @@ def get_fertilizer_map(
     if not field:
         raise HTTPException(status_code=404, detail="Field not found")
     
-    # Generate fertilizer map using ML model
+    #generate fertilizer map using ML model
     fertilizer_data = generate_fertilizer_map(field.boundary)
     
     return {
@@ -108,6 +108,5 @@ app.add_middleware(
 
 @app.get("/fields/public")
 def get_public_fields(db: Session = Depends(get_db)):
-    # Возвращаем демо поля или первые N полей
     fields = db.query(models.Field).limit(10).all()
     return fields

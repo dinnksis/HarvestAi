@@ -3,11 +3,9 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
 
-# Должен брать из DATABASE_URL из environment
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
-    # Fallback для разработки
     DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/fertilizer_map"
 
 engine = create_engine(DATABASE_URL)

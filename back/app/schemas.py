@@ -36,7 +36,7 @@ class Field(FieldBase):
 class FertilizerPoint(BaseModel):
     x: float
     y: float
-    value: float  # kg/hectare
+    value: float  
 
 class FertilizerMapResponse(BaseModel):
     field_id: int

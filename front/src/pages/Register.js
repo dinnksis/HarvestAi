@@ -26,7 +26,6 @@ const Register = () => {
     e.preventDefault();
     setError('');
     
-    // Валидация
     if (password !== confirmPassword) {
       setError('Пароли не совпадают');
       return;

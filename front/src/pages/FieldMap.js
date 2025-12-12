@@ -19,7 +19,7 @@ import { MapContainer, TileLayer, Polygon, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
-// Fix for default markers
+
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: require('leaflet/dist/images/marker-icon-2x.png'),
@@ -27,7 +27,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: require('leaflet/dist/images/marker-shadow.png'),
 });
 
-// Компонент для рисования полигонов
+
 function PolygonDrawer({ onPolygonComplete }) {
   const [polygonPoints, setPolygonPoints] = useState([]);
   
@@ -38,9 +38,9 @@ function PolygonDrawer({ onPolygonComplete }) {
       const newPolygonPoints = [...polygonPoints, newPoint];
       setPolygonPoints(newPolygonPoints);
       
-      // Если есть 3 или больше точек, создаем полигон
+      // если есть 3 или больше точек, создаем полигон
       if (newPolygonPoints.length >= 3) {
-        onPolygonComplete([[...newPolygonPoints, newPolygonPoints[0]]]); // Замыкаем полигон
+        onPolygonComplete([[...newPolygonPoints, newPolygonPoints[0]]]); // замыкаем 
       }
     },
   });
@@ -59,7 +59,7 @@ const FieldMap = () => {
   const [openDialog, setOpenDialog] = useState(false);
   const [fieldName, setFieldName] = useState('');
   const [polygonCoordinates, setPolygonCoordinates] = useState([]);
-  const [center, setCenter] = useState([55.7558, 37.6173]); // Москва
+  const [center, setCenter] = useState([55.7558, 37.6173]); // москва
 
   const handlePolygonComplete = (coordinates) => {
     setPolygonCoordinates(coordinates);
@@ -72,7 +72,7 @@ const FieldMap = () => {
       return;
     }
 
-    // Здесь будет запрос к API для сохранения поля
+   
     console.log('Сохранение поля:', {
       name: fieldName,
       boundary: {
