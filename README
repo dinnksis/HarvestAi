@@ -6,6 +6,10 @@ docker-compose up --build -d
 проверка что все 3 контейнера есть(постгре, фронт и бэк)
 docker-compose ps 
 
+Start-Process "http://localhost:3000" 
+если херня, подожите минуту и потом запускайте
+
+
 логи если что-то не то:
 docker-compose logs --tail=20
 docker-compose logs frontend/backend --tail=20
