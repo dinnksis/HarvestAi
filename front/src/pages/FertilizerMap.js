@@ -16,6 +16,9 @@ import {
   TableHead,
   TableRow,
   Slider,
+  Card,
+  CardContent,
+  Tooltip,
 } from '@mui/material';
 import { MapContainer, TileLayer, Polygon, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -40,8 +43,9 @@ const FertilizerMap = () => {
   const [error, setError] = useState('');
   const [fieldData, setFieldData] = useState(null);
   const [fertilizerData, setFertilizerData] = useState(null);
-  const [gridSize, setGridSize] = useState(100); // Размер ячейки сетки в метрах
-  const [opacity, setOpacity] = useState(0.7); // Прозрачность полигонов
+  const gridSize = 10;
+  const [opacity, setOpacity] = useState(65);
+  const [zoomLevel, setZoomLevel] = useState(15);
 
   useEffect(() => {
     fetchFertilizerData();
@@ -54,7 +58,6 @@ const FertilizerMap = () => {
       
       console.log('Fetching fertilizer data for field:', fieldId);
       
-      // Получаем данные удобрений
       const response = await axios.get(
         `http://localhost:8000/fields/${fieldId}/fertilizer-map`,
         {
@@ -66,9 +69,10 @@ const FertilizerMap = () => {
       );
       
       console.log('Fertilizer data received:', response.data);
-      setFertilizerData(response.data);
       
-      // Если в ответе есть данные поля
+      const processedData = processDataForGrid(response.data, gridSize);
+      setFertilizerData(processedData);
+      
       if (response.data.field_name) {
         setFieldData({
           field_name: response.data.field_name,
@@ -78,80 +82,205 @@ const FertilizerMap = () => {
       
     } catch (err) {
       console.error('Failed to fetch fertilizer data:', err);
-      // Если нет реальных данных, создаем демо-данные с зонами
-      generateDemoGridData();
+      generateDetailedDemoGrid();
     } finally {
       setLoading(false);
     }
   };
 
-  // Функция для генерации демо-данных в виде сетки
-  const generateDemoGridData = () => {
-    console.log('Generating demo grid data...');
+  const processDataForGrid = (data, cellSizeMeters) => {
+    if (data.grid_cells && Array.isArray(data.grid_cells)) {
+      return {
+        ...data,
+        grid_size: cellSizeMeters
+      };
+    }
     
-    // Создаем сетку 5x5 полигонов
+    if (data.fertilizer_map && Array.isArray(data.fertilizer_map)) {
+      return createGridFromPoints(data.fertilizer_map, cellSizeMeters, data);
+    }
+    
+    return generateDetailedDemoGrid(cellSizeMeters, data);
+  };
+
+  const createGridFromPoints = (points, cellSizeMeters, originalData) => {
+    const lats = points.map(p => p.y || p.lat || 0);
+    const lngs = points.map(p => p.x || p.lng || 0);
+    
+    if (lats.length === 0) {
+      return generateDetailedDemoGrid(cellSizeMeters, originalData);
+    }
+    
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    const minLng = Math.min(...lngs);
+    const maxLng = Math.max(...lngs);
+    
+    const centerLat = (minLat + maxLat) / 2;
+    const metersPerDegreeLat = 111000;
+    const metersPerDegreeLng = 111000 * Math.cos(centerLat * Math.PI / 180);
+    
+    const cellSizeLat = cellSizeMeters / metersPerDegreeLat;
+    const cellSizeLng = cellSizeMeters / metersPerDegreeLng;
+    
+    const latSteps = Math.ceil((maxLat - minLat) / cellSizeLat);
+    const lngSteps = Math.ceil((maxLng - minLng) / cellSizeLng);
+    
+    const maxCells = 1000;
+    const totalCells = latSteps * lngSteps;
+    
+    let adjustedCellSizeLat = cellSizeLat;
+    let adjustedCellSizeLng = cellSizeLng;
+    
+    if (totalCells > maxCells * 2) {
+      const scaleFactor = Math.sqrt(totalCells / (maxCells * 2));
+      adjustedCellSizeLat *= scaleFactor;
+      adjustedCellSizeLng *= scaleFactor;
+    }
+    
+    const finalLatSteps = Math.ceil((maxLat - minLat) / adjustedCellSizeLat);
+    const finalLngSteps = Math.ceil((maxLng - minLng) / adjustedCellSizeLng);
+    
     const gridCells = [];
-    const baseLat = 55.7558;
-    const baseLng = 37.6176;
-    const cellSize = 0.001; // Примерный размер ячейки в градусах
     
-    for (let row = 0; row < 5; row++) {
-      for (let col = 0; col < 5; col++) {
-        const lat = baseLat + (row * cellSize);
-        const lng = baseLng + (col * cellSize);
+    for (let row = 0; row < finalLatSteps; row++) {
+      for (let col = 0; col < finalLngSteps; col++) {
+        const lat = minLat + (row * adjustedCellSizeLat);
+        const lng = minLng + (col * adjustedCellSizeLng);
         
-        // Создаем квадратную ячейку
+        const cellPoints = points.filter(p => {
+          const pLat = p.y || p.lat || 0;
+          const pLng = p.x || p.lng || 0;
+          return pLat >= lat && pLat < lat + adjustedCellSizeLat && 
+                 pLng >= lng && pLng < lng + adjustedCellSizeLng;
+        });
+        
+        let cellValue = null;
+        if (cellPoints.length > 0) {
+          cellValue = cellPoints.reduce((sum, p) => sum + (p.value || 0), 0) / cellPoints.length;
+        } else {
+          const nearestPoints = points
+            .map(p => ({
+              point: p,
+              distance: Math.sqrt(
+                Math.pow((p.y || p.lat || 0) - (lat + adjustedCellSizeLat/2), 2) +
+                Math.pow((p.x || p.lng || 0) - (lng + adjustedCellSizeLng/2), 2)
+              )
+            }))
+            .sort((a, b) => a.distance - b.distance)
+            .slice(0, 5);
+          
+          if (nearestPoints.length > 0) {
+            const totalWeight = nearestPoints.reduce((sum, np) => sum + (1 / (np.distance + 0.001)), 0);
+            cellValue = nearestPoints.reduce((sum, np) => 
+              sum + ((np.point.value || 0) * (1 / (np.distance + 0.001))), 0) / totalWeight;
+          }
+        }
+        
+        if (cellValue !== null) {
+          const cell = {
+            id: `${row}-${col}`,
+            coordinates: [
+              [lat, lng],
+              [lat + adjustedCellSizeLat, lng],
+              [lat + adjustedCellSizeLat, lng + adjustedCellSizeLng],
+              [lat, lng + adjustedCellSizeLng]
+            ],
+            value: Math.round(cellValue * 10) / 10,
+            center: [lat + adjustedCellSizeLat/2, lng + adjustedCellSizeLng/2],
+            points_in_cell: cellPoints.length,
+            cell_size_meters: cellSizeMeters
+          };
+          
+          gridCells.push(cell);
+        }
+      }
+    }
+    
+    return {
+      ...originalData,
+      grid_cells: gridCells,
+      grid_size: cellSizeMeters,
+      total_points: points.length,
+      total_cells: gridCells.length
+    };
+  };
+
+  const generateDetailedDemoGrid = (cellSize = gridSize, originalData = null) => {
+    console.log('Generating detailed demo grid with cell size:', cellSize);
+    
+    const baseLat = 55.1558;
+    const baseLng = 37.3176;
+    
+    const cellSizeDeg = cellSize / 111000;
+    
+    const rows = 40;
+    const cols = 40;
+    
+    const gridCells = [];
+    
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const lat = baseLat + (row * cellSizeDeg);
+        const lng = baseLng + (col * cellSizeDeg);
+        
+        const centerRow = rows / 2;
+        const centerCol = cols / 2;
+        const distance = Math.sqrt(
+          Math.pow(row - centerRow, 2) + Math.pow(col - centerCol, 2)
+        );
+        
+        const baseValue = Math.min(100, (distance / Math.max(centerRow, centerCol)) * 80);
+        const randomFactor = (Math.random() - 0.5) * 10;
+        const value = Math.max(0, Math.min(100, baseValue + randomFactor));
+        
         const cell = {
           id: `${row}-${col}`,
           coordinates: [
             [lat, lng],
-            [lat + cellSize, lng],
-            [lat + cellSize, lng + cellSize],
-            [lat, lng + cellSize]
+            [lat + cellSizeDeg, lng],
+            [lat + cellSizeDeg, lng + cellSizeDeg],
+            [lat, lng + cellSizeDeg]
           ],
-          value: Math.floor(Math.random() * 80), // Случайное значение 0-79
-          center: [lat + cellSize/2, lng + cellSize/2]
+          value: Math.round(value * 10) / 10,
+          center: [lat + cellSizeDeg/2, lng + cellSizeDeg/2],
+          points_in_cell: Math.floor(Math.random() * 2) + 1,
+          cell_size_meters: cellSize
         };
         
         gridCells.push(cell);
       }
     }
     
-    setFertilizerData({
-      field_name: "Демо поле",
+    return {
+      field_name: originalData?.field_name || "Детальная демо-карта",
       field_id: fieldId,
-      fertilizer_map: gridCells,
-      grid_size: gridSize
-    });
-    
-    setFieldData({
-      field_name: "Демо поле",
-      field_id: fieldId
-    });
+      grid_cells: gridCells,
+      grid_size: cellSize,
+      total_cells: gridCells.length,
+      is_demo: true,
+      ...originalData
+    };
   };
 
-  // Функция для определения цвета зоны на основе значения
   const getColor = (value) => {
-    if (value === undefined || value === null) return '#cccccc'; // серый для отсутствующих данных
+    if (value === undefined || value === null) return '#cccccc';
     
-    // Градиент от зеленого к красному
-    const hue = ((100 - Math.min(value, 100)) * 120) / 100; // 120° (зеленый) -> 0° (красный)
-    return `hsl(${hue}, 100%, 50%)`;
-  };
-
-  // Функция для получения цветовой шкалы для легенды
-  const getColorScale = () => {
-    const colors = [];
-    for (let i = 0; i <= 100; i += 20) {
-      colors.push({
-        value: i,
-        color: getColor(i)
-      });
+    const normalizedValue = Math.min(value, 100) / 100;
+    
+    let hue;
+    if (normalizedValue <= 0.5) {
+      hue = 120 - (normalizedValue * 120);
+    } else {
+      hue = 60 - ((normalizedValue - 0.5) * 120);
     }
-    return colors;
+    
+    const saturation = 85 + (normalizedValue * 15);
+    const lightness = 50 - (normalizedValue * 10);
+    
+    return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
   };
 
-  // Функция для получения рекомендации
   const getRecommendation = (value) => {
     if (value === undefined || value === null) return 'Нет данных';
     
@@ -161,68 +290,74 @@ const FertilizerMap = () => {
     return 'Интенсивное внесение (60+ кг/га)';
   };
 
-  // Расчет центра карты
   const calculateCenter = () => {
-    if (!fertilizerData?.fertilizer_map || fertilizerData.fertilizer_map.length === 0) {
-      return [55.7558, 37.6176]; // Москва по умолчанию
+    if (!fertilizerData?.grid_cells || fertilizerData.grid_cells.length === 0) {
+      return [55.1558, 37.3176];
     }
     
-    // Используем первый полигон для центра
-    const firstCell = fertilizerData.fertilizer_map[0];
+    const firstCell = fertilizerData.grid_cells[0];
     if (firstCell.center) {
       return firstCell.center;
     }
     
-    // Или вычисляем из координат
-    const coordinates = firstCell.coordinates;
-    const avgLat = coordinates.reduce((sum, coord) => sum + coord[0], 0) / coordinates.length;
-    const avgLng = coordinates.reduce((sum, coord) => sum + coord[1], 0) / coordinates.length;
-    
-    return [avgLat, avgLng];
+    return [55.1558, 37.3176];
   };
 
-  // Обработчик изменения размера сетки
-  const handleGridSizeChange = (event, newValue) => {
-    setGridSize(newValue);
-    // Здесь можно добавить логику пересчета сетки
-    if (fertilizerData) {
-      setFertilizerData({
-        ...fertilizerData,
-        grid_size: newValue
-      });
-    }
-  };
-
-  // Обработчик изменения прозрачности
   const handleOpacityChange = (event, newValue) => {
-    setOpacity(newValue / 100);
+    setOpacity(newValue);
   };
+
+  const handleZoomIn = () => {
+    setZoomLevel(prev => Math.min(prev + 1, 18));
+  };
+
+  const handleZoomOut = () => {
+    setZoomLevel(prev => Math.max(prev - 1, 10));
+  };
+
+  const calculateStatistics = () => {
+    if (!fertilizerData?.grid_cells) return null;
+    
+    const cells = fertilizerData.grid_cells;
+    const values = cells.map(cell => cell.value).filter(v => v != null);
+    
+    if (values.length === 0) return null;
+    
+    const sum = values.reduce((a, b) => a + b, 0);
+    const avg = sum / values.length;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    
+    const zones = [
+      { name: 'Низкая (0-20)', min: 0, max: 20, color: '#4CAF50' },
+      { name: 'Средняя (20-40)', min: 20, max: 40, color: '#FFC107' },
+      { name: 'Высокая (40-60)', min: 40, max: 60, color: '#FF9800' },
+      { name: 'Очень высокая (60+)', min: 60, max: Infinity, color: '#F44336' },
+    ];
+    
+    zones.forEach(zone => {
+      zone.count = values.filter(v => v >= zone.min && v < zone.max).length;
+      zone.percentage = Math.round((zone.count / values.length) * 100);
+    });
+    
+    return {
+      totalCells: cells.length,
+      avg: Math.round(avg * 10) / 10,
+      min: Math.round(min * 10) / 10,
+      max: Math.round(max * 10) / 10,
+      zones
+    };
+  };
+
+  const stats = calculateStatistics();
 
   if (loading) {
     return (
       <Container maxWidth="lg" sx={{ mt: 4 }}>
         <LinearProgress />
         <Typography sx={{ mt: 2, textAlign: 'center' }}>
-          Загрузка карты удобрений...
+          Загрузка детальной карты удобрений...
         </Typography>
-      </Container>
-    );
-  }
-
-  if (error) {
-    return (
-      <Container maxWidth="lg" sx={{ mt: 4 }}>
-        <Alert 
-          severity="error" 
-          sx={{ mb: 2 }}
-          action={
-            <Button color="inherit" size="small" onClick={() => navigate('/dashboard')}>
-              Назад
-            </Button>
-          }
-        >
-          {error}
-        </Alert>
       </Container>
     );
   }
@@ -240,38 +375,94 @@ const FertilizerMap = () => {
         </Button>
         
         <Typography variant="h4" gutterBottom>
-          🗺️ Карта удобрений (Зональная карта)
+          🗺️ Детальная карта удобрений
         </Typography>
         <Typography color="text.secondary">
-          {fieldData?.field_name ? `Поле: "${fieldData.field_name}"` : 'Анализ потребности в удобрениях'}
-          {fieldId && ` (ID: ${fieldId})`}
+          {fieldData?.field_name ? `Поле: "${fieldData.field_name}"` : 'Детальный анализ потребности в удобрениях'}
+          {fieldId && ` • ID: ${fieldId}`}
+          {fertilizerData?.is_demo && ' • Демо-данные'}
+          {fertilizerData?.grid_cells && ` • ${fertilizerData.grid_cells.length} ячеек анализа`}
         </Typography>
+        
+        {error && (
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            {error}
+          </Alert>
+        )}
       </Box>
 
       {/* Панель управления */}
       <Paper sx={{ p: 2, mb: 2 }}>
-        <Grid container spacing={3} alignItems="center">
+        <Grid container spacing={2} alignItems="center">
           <Grid item xs={12} md={6}>
-            <Typography gutterBottom>Размер ячейки сетки: {gridSize} м</Typography>
-            <Slider
-              value={gridSize}
-              onChange={handleGridSizeChange}
-              min={50}
-              max={200}
-              step={10}
-              valueLabelDisplay="auto"
-            />
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+              <Typography variant="subtitle2">
+                🔍 Прозрачность зон
+              </Typography>
+              <Tooltip title="Регулировка видимости цветных зон на карте">
+                <Typography 
+                  sx={{ 
+                    ml: 1, 
+                    fontSize: 14, 
+                    color: 'text.secondary',
+                    cursor: 'help',
+                    border: '1px solid',
+                    borderColor: 'grey.300',
+                    borderRadius: '50%',
+                    width: 18,
+                    height: 18,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  ?
+                </Typography>
+              </Tooltip>
+            </Box>
+            <Box sx={{ px: 1 }}>
+              <Slider
+                value={opacity}
+                onChange={handleOpacityChange}
+                min={30}
+                max={100}
+                step={5}
+                valueLabelDisplay="auto"
+                valueLabelFormat={(value) => `${value}%`}
+                marks={[
+                  { value: 30, label: '30%' },
+                  { value: 65, label: '65%' },
+                  { value: 100, label: '100%' },
+                ]}
+              />
+            </Box>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center' }}>
+              Текущая прозрачность: {opacity}%
+            </Typography>
           </Grid>
+          
           <Grid item xs={12} md={6}>
-            <Typography gutterBottom>Прозрачность зон: {Math.round(opacity * 100)}%</Typography>
-            <Slider
-              value={opacity * 100}
-              onChange={handleOpacityChange}
-              min={30}
-              max={100}
-              step={5}
-              valueLabelDisplay="auto"
-            />
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <Typography variant="subtitle2" gutterBottom>
+                🗺️ Управление картой
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                <Button 
+                  variant="outlined" 
+                  onClick={handleZoomIn}
+                  size="small"
+                >
+                  Приблизить
+                </Button>
+                <Button 
+                  variant="outlined" 
+                  onClick={handleZoomOut}
+                  size="small"
+                >
+                  Отдалить
+                </Button>
+              </Box>
+            </Box>
           </Grid>
         </Grid>
       </Paper>
@@ -279,11 +470,26 @@ const FertilizerMap = () => {
       <Grid container spacing={3}>
         {/* Левая колонка - Карта */}
         <Grid item xs={12} lg={8}>
-          <Paper sx={{ p: 0, height: '100%', overflow: 'hidden' }}>
-            <Box sx={{ height: 600, width: '100%', position: 'relative' }}>
+          <Paper sx={{ p: 0, height: '100%', overflow: 'hidden', position: 'relative' }}>
+            <Box sx={{ 
+              position: 'absolute', 
+              top: 10, 
+              right: 10, 
+              zIndex: 1000,
+              bgcolor: 'background.paper',
+              p: 1,
+              borderRadius: 1,
+              boxShadow: 2
+            }}>
+              <Typography variant="caption">
+                Зум: {zoomLevel} • Ячеек: {fertilizerData?.grid_cells?.length || 0}
+              </Typography>
+            </Box>
+            
+            <Box sx={{ height: 600, width: '100%' }}>
               <MapContainer
                 center={calculateCenter()}
-                zoom={13}
+                zoom={zoomLevel}
                 style={{ height: '100%', width: '100%' }}
                 scrollWheelZoom={true}
               >
@@ -292,35 +498,57 @@ const FertilizerMap = () => {
                   attribution='&copy; OpenStreetMap contributors'
                 />
                 
-                {/* Градиентные полигоны (зоны) */}
-                {fertilizerData?.fertilizer_map?.map((cell) => (
+                {fertilizerData?.grid_cells?.map((cell) => (
                   <Polygon
                     key={cell.id}
                     positions={cell.coordinates}
                     pathOptions={{
                       fillColor: getColor(cell.value),
                       color: '#000',
-                      weight: 1,
-                      fillOpacity: opacity,
+                      weight: 0.3,
+                      fillOpacity: opacity / 100,
                       opacity: 0.8
                     }}
                   >
                     <Popup>
-                      <Box sx={{ p: 1, minWidth: 200 }}>
-                        <Typography variant="subtitle2" gutterBottom>
-                          Зона анализа
+                      <Box sx={{ p: 1.5, minWidth: 220 }}>
+                        <Typography variant="subtitle1" gutterBottom fontWeight="bold" color="primary">
+                          Зона анализа #{cell.id}
                         </Typography>
-                        <Typography variant="h6" color="primary">
-                          {cell.value !== undefined ? `${cell.value} кг/га` : 'Нет данных'}
-                        </Typography>
-                        <Typography variant="body2" sx={{ mt: 1 }}>
-                          <strong>Рекомендация:</strong> {getRecommendation(cell.value)}
-                        </Typography>
-                        <Typography variant="body2" sx={{ mt: 0.5 }}>
-                          <strong>Размер ячейки:</strong> {gridSize} м
-                        </Typography>
-                        <Typography variant="caption" display="block" sx={{ mt: 1, color: 'text.secondary' }}>
-                          ID: {cell.id}
+                        
+                        <Grid container spacing={1} sx={{ mb: 1.5 }}>
+                          <Grid item xs={6}>
+                            <Typography variant="caption" color="text.secondary" display="block">
+                              Потребность:
+                            </Typography>
+                            <Typography variant="h6" sx={{ color: getColor(cell.value) }}>
+                              {cell.value !== undefined ? `${cell.value.toFixed(1)} кг/га` : 'Нет данных'}
+                            </Typography>
+                          </Grid>
+                          <Grid item xs={6}>
+                            <Typography variant="caption" color="text.secondary" display="block">
+                              Размер ячейки:
+                            </Typography>
+                            <Typography variant="body2">
+                              {gridSize} метров
+                            </Typography>
+                          </Grid>
+                        </Grid>
+                        
+                        <Card variant="outlined" sx={{ mb: 1.5 }}>
+                          <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                            <Typography variant="body2" fontWeight="medium" gutterBottom>
+                              Рекомендация:
+                            </Typography>
+                            <Typography variant="body2" color="primary">
+                              {getRecommendation(cell.value)}
+                            </Typography>
+                          </CardContent>
+                        </Card>
+                        
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          Координаты центра: 
+                          {cell.center?.[0]?.toFixed(6)}, {cell.center?.[1]?.toFixed(6)}
                         </Typography>
                       </Box>
                     </Popup>
@@ -331,153 +559,186 @@ const FertilizerMap = () => {
           </Paper>
         </Grid>
 
-        {/* Правая колонка - Легенда и информация */}
+        {/* Правая колонка - Легенда и кнопки */}
         <Grid item xs={12} lg={4}>
           <Paper sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <Typography variant="h6" gutterBottom>
-              Градиентная легенда
-            </Typography>
             
-            {/* Градиентная шкала */}
-            <Box sx={{ mb: 3, position: 'relative', height: 30, borderRadius: 1, overflow: 'hidden' }}>
-              <Box 
-                sx={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  background: 'linear-gradient(to right, hsl(120, 100%, 50%), hsl(60, 100%, 50%), hsl(30, 100%, 50%), hsl(0, 100%, 50%))'
-                }}
-              />
-              <Typography 
-                variant="caption" 
-                sx={{ 
-                  position: 'absolute', 
-                  left: 5, 
-                  top: 5, 
-                  color: 'black',
-                  fontWeight: 'bold'
-                }}
-              >
-                0 кг/га
-              </Typography>
-              <Typography 
-                variant="caption" 
-                sx={{ 
-                  position: 'absolute', 
-                  right: 5, 
-                  top: 5, 
-                  color: 'black',
-                  fontWeight: 'bold'
-                }}
-              >
-                100+ кг/га
-              </Typography>
-            </Box>
-
-            {/* Числовая легенда */}
+            {/* Цветовая шкала */}
             <Box sx={{ mb: 3 }}>
-              <Typography variant="subtitle2" gutterBottom>
-                Числовая шкала:
-              </Typography>
-              {getColorScale().map((colorItem, index) => (
-                <Box key={index} sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                  <Box sx={{ 
-                    width: 20, 
-                    height: 20, 
-                    bgcolor: colorItem.color, 
-                    mr: 2, 
-                    border: '1px solid #000',
-                    borderRadius: 1
-                  }} />
-                  <Typography variant="body2">
-                    {colorItem.value} кг/га
-                  </Typography>
-                  <Box sx={{ ml: 'auto' }}>
-                    <Typography variant="caption" color="text.secondary">
-                      {getRecommendation(colorItem.value)}
-                    </Typography>
-                  </Box>
-                </Box>
-              ))}
-            </Box>
-
-            {/* Статистика */}
-            <Box sx={{ mb: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                Статистика анализа
+              <Typography variant="body2" paragraph>
+                Маленькие квадраты (размером {gridSize} метров) представляют отдельные зоны анализа.
+                Цвет каждой зоны указывает на потребность в удобрениях:
               </Typography>
               
-              {fertilizerData?.fertilizer_map && (
-                <>
-                  <Typography variant="body2" sx={{ mb: 1 }}>
-                    Всего зон: {fertilizerData.fertilizer_map.length}
-                  </Typography>
-                  <Typography variant="body2" sx={{ mb: 1 }}>
-                    Размер ячейки: {gridSize} м
-                  </Typography>
-                  
-                  {/* Расчет средней потребности */}
-                  {fertilizerData.fertilizer_map.length > 0 && (
-                    <>
-                      <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>
-                        Средняя потребность:
+              {/* Детальная цветовая шкала */}
+              <Box sx={{ mb: 2 }}>
+                <Box sx={{ 
+                  height: 25, 
+                  borderRadius: 1, 
+                  overflow: 'hidden',
+                  background: 'linear-gradient(to right, #4CAF50, #8BC34A, #CDDC39, #FFEB3B, #FFC107, #FF9800, #FF5722)',
+                  mb: 1,
+                  position: 'relative'
+                }}>
+                  <Box sx={{ 
+                    position: 'absolute', 
+                    top: 0, 
+                    bottom: 0, 
+                    left: 0, 
+                    right: 0,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-end',
+                    px: 0.5
+                  }}>
+                    {[0, 20, 40, 60, 80, 100].map((value) => (
+                      <Typography 
+                        key={value}
+                        variant="caption" 
+                        sx={{ 
+                          color: 'black',
+                          fontWeight: 'bold',
+                          fontSize: '0.7rem',
+                          textShadow: '0 0 2px white'
+                        }}
+                      >
+                        {value}
                       </Typography>
-                      <Typography variant="h5" color="primary">
-                        {Math.round(
-                          fertilizerData.fertilizer_map.reduce((sum, cell) => sum + (cell.value || 0), 0) / 
-                          fertilizerData.fertilizer_map.length
-                        )} кг/га
-                      </Typography>
-                    </>
-                  )}
-                </>
-              )}
+                    ))}
+                  </Box>
+                </Box>
+                <Typography variant="caption" color="text.secondary" align="center" sx={{ display: 'block' }}>
+                  кг/га удобрений (зелёный = мало, красный = много)
+                </Typography>
+              </Box>
+              
+              <Typography variant="body2" paragraph>
+                <strong>Наведите курсор на любую зону</strong> для получения подробной информации.
+              </Typography>
             </Box>
 
-            {/* Действия */}
-            <Box sx={{ mt: 'auto', pt: 2, borderTop: 1, borderColor: 'divider' }}>
+            {/* Кнопка Обновить данные */}
+            <Box sx={{ mb: 3 }}>
               <Button 
                 variant="contained" 
-                fullWidth 
-                sx={{ mb: 1 }}
-                onClick={() => {
-                  fetchFertilizerData();
-                }}
+                onClick={fetchFertilizerData}
+                fullWidth
+                size="large"
               >
                 Обновить данные
               </Button>
-              
+            </Box>
+
+            {/* Статистика анализа */}
+            {stats && (
+              <Box sx={{ mb: 3 }}>
+                <Typography variant="h6" gutterBottom>
+                  📊 Статистика анализа
+                </Typography>
+                
+                <Grid container spacing={1} sx={{ mb: 2 }}>
+                  <Grid item xs={6}>
+                    <Paper variant="outlined" sx={{ p: 1.5, textAlign: 'center', height: '100%' }}>
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        Всего зон
+                      </Typography>
+                      <Typography variant="h5">
+                        {stats.totalCells}
+                      </Typography>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={6}>
+                    <Paper variant="outlined" sx={{ p: 1.5, textAlign: 'center', height: '100%' }}>
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        Средняя потребность
+                      </Typography>
+                      <Typography variant="h5" color="primary">
+                        {stats.avg} кг/га
+                      </Typography>
+                    </Paper>
+                  </Grid>
+                </Grid>
+                
+                <Typography variant="subtitle2" gutterBottom>
+                  Распределение по зонам:
+                </Typography>
+                
+                {stats.zones.map((zone, index) => (
+                  <Box 
+                    key={index} 
+                    sx={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      mb: 1,
+                      p: 1,
+                      bgcolor: 'grey.50',
+                      borderRadius: 1
+                    }}
+                  >
+                    <Box sx={{ 
+                      width: 16, 
+                      height: 16, 
+                      bgcolor: zone.color, 
+                      mr: 2, 
+                      borderRadius: 1,
+                      border: '1px solid #000'
+                    }} />
+                    <Typography variant="body2" sx={{ flexGrow: 1 }}>
+                      {zone.name}
+                    </Typography>
+                    <Typography variant="body2" fontWeight="bold">
+                      {zone.count} зон ({zone.percentage}%)
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+            )}
+
+            {/* Кнопки действий */}
+            <Box sx={{ mt: 'auto', pt: 2, borderTop: 1, borderColor: 'divider' }}>
               <Button 
                 variant="outlined" 
                 fullWidth
+                sx={{ mb: 1 }}
                 onClick={() => {
-                  // Экспорт данных
                   if (fertilizerData) {
                     const dataStr = JSON.stringify(fertilizerData, null, 2);
-                    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-                    const exportFileDefaultName = `fertilizer-map-${fieldId}.json`;
-                    const linkElement = document.createElement('a');
-                    linkElement.setAttribute('href', dataUri);
-                    linkElement.setAttribute('download', exportFileDefaultName);
-                    linkElement.click();
+                    const blob = new Blob([dataStr], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `fertilizer-map-detailed-${fieldId}.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
                   }
                 }}
               >
-                Экспорт данных
+                📥 Скачать данные (JSON)
+              </Button>
+              
+              <Button 
+                variant="contained" 
+                fullWidth
+                onClick={() => window.print()}
+              >
+                🖨️ Распечатать отчет
               </Button>
             </Box>
           </Paper>
         </Grid>
       </Grid>
 
-      {/* Таблица с данными */}
-      {fertilizerData?.fertilizer_map && fertilizerData.fertilizer_map.length > 0 && (
+      {/* Таблица с детальными данными */}
+      {fertilizerData?.grid_cells && fertilizerData.grid_cells.length > 0 && (
         <Box sx={{ mt: 3 }}>
           <Paper sx={{ p: 3 }}>
             <Typography variant="h6" gutterBottom>
-              Детальные данные по зонам
+              📋 Детальные данные по зонам
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+              Топ-15 зон с наибольшей потребностью в удобрениях
             </Typography>
             
             <TableContainer sx={{ maxHeight: 300 }}>
@@ -485,27 +746,44 @@ const FertilizerMap = () => {
                 <TableHead>
                   <TableRow>
                     <TableCell>ID зоны</TableCell>
-                    <TableCell>Центр (широта)</TableCell>
-                    <TableCell>Центр (долгота)</TableCell>
-                    <TableCell>Удобрений (кг/га)</TableCell>
+                    <TableCell>Координаты центра</TableCell>
+                    <TableCell>Потребность (кг/га)</TableCell>
                     <TableCell>Рекомендация</TableCell>
-                    <TableCell>Цвет</TableCell>
+                    <TableCell>Цвет зоны</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {fertilizerData.fertilizer_map.slice(0, 15).map((cell) => (
-                    <TableRow key={cell.id}>
+                  {[...fertilizerData.grid_cells]
+                    .sort((a, b) => (b.value || 0) - (a.value || 0))
+                    .slice(0, 15)
+                    .map((cell) => (
+                    <TableRow key={cell.id} hover>
                       <TableCell>{cell.id}</TableCell>
-                      <TableCell>{cell.center?.[0]?.toFixed(6) || 'N/A'}</TableCell>
-                      <TableCell>{cell.center?.[1]?.toFixed(6) || 'N/A'}</TableCell>
                       <TableCell>
-                        <strong>{cell.value !== undefined ? `${cell.value} кг/га` : 'N/A'}</strong>
+                        {cell.center?.[0]?.toFixed(6)}, {cell.center?.[1]?.toFixed(6)}
                       </TableCell>
-                      <TableCell>{getRecommendation(cell.value)}</TableCell>
+                      <TableCell>
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                          <Box sx={{ 
+                            width: 12, 
+                            height: 12, 
+                            bgcolor: getColor(cell.value),
+                            border: '1px solid #000',
+                            borderRadius: 1,
+                            mr: 1
+                          }} />
+                          <strong>{cell.value?.toFixed(1)} кг/га</strong>
+                        </Box>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">
+                          {getRecommendation(cell.value)}
+                        </Typography>
+                      </TableCell>
                       <TableCell>
                         <Box sx={{ 
-                          width: 15, 
-                          height: 15, 
+                          width: 20, 
+                          height: 20, 
                           bgcolor: getColor(cell.value),
                           border: '1px solid #000',
                           borderRadius: 1
@@ -517,9 +795,9 @@ const FertilizerMap = () => {
               </Table>
             </TableContainer>
             
-            {fertilizerData.fertilizer_map.length > 15 && (
+            {fertilizerData.grid_cells.length > 15 && (
               <Typography variant="caption" sx={{ display: 'block', mt: 1, textAlign: 'center' }}>
-                Показано 15 из {fertilizerData.fertilizer_map.length} зон
+                Показаны 15 из {fertilizerData.grid_cells.length} зон
               </Typography>
             )}
           </Paper>
