@@ -6,16 +6,19 @@ import json
 
 from . import models, schemas, auth, database
 from .database import SessionLocal, engine
-from .ml import generate_fertilizer_map
+from .ml import get_fertilizer_recommendations  
 
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Fertilizer Map API", version="1.0.0")
 
-# CORS middleware
+#CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -29,7 +32,7 @@ def get_db():
     finally:
         db.close()
 
-#auth 
+#auth endpoints
 @app.post("/register", response_model=schemas.User)
 def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db_user = auth.get_user_by_email(db, email=user.email)
@@ -45,7 +48,7 @@ def login(form_data: schemas.UserLogin, db: Session = Depends(get_db)):
     access_token = auth.create_access_token(data={"sub": user.email})
     return {"access_token": access_token, "token_type": "bearer"}
 
-#field 
+#field endpoints
 @app.post("/fields/", response_model=schemas.Field)
 def create_field(
     field: schemas.FieldCreate,
@@ -76,35 +79,18 @@ def get_fertilizer_map(
     if not field:
         raise HTTPException(status_code=404, detail="Field not found")
     
-    #generate fertilizer map using ML model
-    fertilizer_data = generate_fertilizer_map(field.boundary)
+   
+    result = get_fertilizer_recommendations(field.boundary)
     
     return {
         "field_id": field_id,
         "field_name": field.name,
-        "fertilizer_map": fertilizer_data,
-        "legend": {
-            "0-20": "Низкая потребность (0-20 кг/га)",
-            "20-40": "Средняя потребность (20-40 кг/га)",
-            "40-60": "Высокая потребность (40-60 кг/га)",
-            "60-100": "Очень высокая потребность (60-100 кг/га)"
-        }
+        **result  #распаковка всех данныех из result
     }
 
 @app.get("/")
 def root():
     return {"message": "Fertilizer Map API is running"}
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 @app.get("/fields/public")
 def get_public_fields(db: Session = Depends(get_db)):
