@@ -1,0 +1,17 @@
+запуск через докер
+
+docker-compose up --build -d
+
+
+проверка что все 3 контейнера есть(постгре, фронт и бэк)
+docker-compose ps 
+
+логи если что-то не то:
+docker-compose logs --tail=20
+docker-compose logs frontend/backend --tail=20
+
+если не работает или заново надо собрать:
+удаление старых контейнеров и сетей
+docker-compose down -v
+docker network prune -f
+

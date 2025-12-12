@@ -1,0 +1,65 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: fertilizer_map
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: python:3.11-slim  # ИЗМЕНИЛ: slim вместо alpine!
+    working_dir: /app
+    volumes:
+      - ./back:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres123@postgres:5432/fertilizer_map
+      SECRET_KEY: dev-secret-key-12345
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: "1440"
+    command: >
+      sh -c "
+      pip install fastapi uvicorn sqlalchemy psycopg2-binary python-jose[cryptography] python-multipart numpy pandas email-validator &&
+      python -c 'from app.database import engine; from app import models; models.Base.metadata.create_all(bind=engine)' &&
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      "
+
+  frontend:
+    image: node:18-alpine
+    working_dir: /app
+    volumes:
+      - ./front:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    environment:
+      REACT_APP_API_URL: http://localhost:8000
+      HOST: 0.0.0.0
+      CHOKIDAR_USEPOLLING: "true"  # ДОБАВИЛ для hot-reload
+    stdin_open: true
+    tty: true
+    command: >
+      sh -c "
+      npm install &&
+      npm start
+      "
+
+volumes:
+  postgres_data:
+
+
