@@ -1,38 +1,60 @@
-{
-    "name": "fertilizer-map-frontend",
-    "version": "0.1.0",
-    "private": true,
-    "dependencies": {
-      "react": "^18.2.0",
-      "react-dom": "^18.2.0",
-      "react-scripts": "5.0.1",
-      "axios": "^1.6.2",
-      "react-router-dom": "^6.20.0",
-      "leaflet": "^1.9.4",
-      "react-leaflet": "^4.2.1",
-      "react-hook-form": "^7.47.0",
-      "jwt-decode": "^3.1.2",
-      "@mui/material": "^5.14.18",
-      "@emotion/react": "^11.11.1",
-      "@emotion/styled": "^11.11.0"
-    },
-    "scripts": {
-      "start": "react-scripts start",
-      "build": "react-scripts build",
-      "test": "react-scripts test",
-      "eject": "react-scripts eject"
-    },
-    "proxy": "http://localhost:8000",
-    "browserslist": {
-      "production": [
-        ">0.2%",
-        "not dead",
-        "not op_mini all"
-      ],
-      "development": [
-        "last 1 chrome version",
-        "last 1 firefox version",
-        "last 1 safari version"
-      ]
-    }
+
+  {
+      "name": "Precision Agriculture Web App",
+      "version": "0.1.0",
+      "private": true,
+      "dependencies": {
+          "@radix-ui/react-accordion": "*",
+          "@radix-ui/react-alert-dialog": "*",
+          "@radix-ui/react-aspect-ratio": "*",
+          "@radix-ui/react-avatar": "*",
+          "@radix-ui/react-checkbox": "*",
+          "@radix-ui/react-collapsible": "*",
+          "@radix-ui/react-context-menu": "*",
+          "@radix-ui/react-dialog": "*",
+          "@radix-ui/react-dropdown-menu": "*",
+          "@radix-ui/react-hover-card": "*",
+          "@radix-ui/react-label": "*",
+          "@radix-ui/react-menubar": "*",
+          "@radix-ui/react-navigation-menu": "*",
+          "@radix-ui/react-popover": "*",
+          "@radix-ui/react-progress": "*",
+          "@radix-ui/react-radio-group": "*",
+          "@radix-ui/react-scroll-area": "*",
+          "@radix-ui/react-select": "*",
+          "@radix-ui/react-separator": "*",
+          "@radix-ui/react-slider": "*",
+          "@radix-ui/react-slot": "*",
+          "@radix-ui/react-switch": "*",
+          "@radix-ui/react-tabs": "*",
+          "@radix-ui/react-toggle": "*",
+          "@radix-ui/react-toggle-group": "*",
+          "@radix-ui/react-tooltip": "*",
+          "class-variance-authority": "*",
+          "clsx": "*",
+          "cmdk": "*",
+          "embla-carousel-react": "*",
+          "input-otp": "*",
+          "lucide-react": "*",
+          "next": "*",
+          "next-themes": "*",
+          "react": "^18.3.1",
+          "react-day-picker": "*",
+          "react-dom": "^18.3.1",
+          "react-hook-form": "^7.55.0",
+          "react-resizable-panels": "*",
+          "recharts": "*",
+          "sonner": "^2.0.3",
+          "tailwind-merge": "*",
+          "vaul": "*"
+      },
+      "devDependencies": {
+          "@types/node": "^20.10.0",
+          "@vitejs/plugin-react-swc": "^3.10.2",
+          "vite": "6.3.5"
+      },
+      "scripts": {
+          "dev": "vite",
+          "build": "vite build"
+      }
   }
