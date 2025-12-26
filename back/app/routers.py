@@ -76,7 +76,7 @@ def predict_pnc(req: PNCRequest):
     lon = res.lonlat_pred[:, 0].tolist()
     lat = res.lonlat_pred[:, 1].tolist()
     pred = res.lonlat_pred[:, 2].tolist()
-    print(pred)
+
     return {
         "lon": lon,
         "lat": lat,

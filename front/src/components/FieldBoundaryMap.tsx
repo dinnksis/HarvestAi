@@ -77,7 +77,7 @@ async function predictPNC(polygonLonLat: LonLat[]): Promise<PncResponse> {
     project_id: "harvestai-482321",
     date_start: "2024-08-10",
     date_end: "2024-09-29",
-    cell_size_m: 2,
+    cell_size_m: 4,
     max_cloud_pct: 20,
     rededge_band: "B5",
     composite: "median",

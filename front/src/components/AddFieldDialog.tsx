@@ -74,14 +74,14 @@ export default function AddFieldDialog({
               <SelectTrigger className="bg-[#1a1d1a] border-[#2b8d35]/20 text-white">
                 <SelectValue placeholder="Выберите культуру" />
               </SelectTrigger>
-              <SelectContent className="bg-[#131613] border-[#2b8d35]/20">
-                <SelectItem value="Пшеница">Пшеница</SelectItem>
-                <SelectItem value="Кукуруза">Кукуруза</SelectItem>
-                <SelectItem value="Соя">Соя</SelectItem>
-                <SelectItem value="Подсолнечник">Подсолнечник</SelectItem>
-                <SelectItem value="Ячмень">Ячмень</SelectItem>
-                <SelectItem value="Рапс">Рапс</SelectItem>
-                <SelectItem value="Другое">Другое</SelectItem>
+              <SelectContent className="bg-[#131613] border-[#2b8d35]/20 text-white">
+                <SelectItem value="Пшеница" className="text-white">Пшеница</SelectItem>
+                <SelectItem value="Кукуруза" className="text-white">Кукуруза</SelectItem>
+                <SelectItem value="Соя" className="text-white">Соя</SelectItem>
+                <SelectItem value="Подсолнечник" className="text-white">Подсолнечник</SelectItem>
+                <SelectItem value="Ячмень" className="text-white">Ячмень</SelectItem>
+                <SelectItem value="Рапс" className="text-white">Рапс</SelectItem>
+                <SelectItem value="Другое" className="text-white">Другое</SelectItem>
               </SelectContent>
             </Select>
           </div>

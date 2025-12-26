@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-import { Card, CardContent } from './ui/card';
-import { toast } from 'sonner@2.0.3';
+import { useEffect, useRef, useState } from "react";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+import { Card, CardContent } from "./ui/card";
+import { toast } from "sonner@2.0.3";
 
 interface Field {
   id: string;
@@ -27,44 +27,85 @@ function clamp01(x: number) {
   return Math.max(0, Math.min(1, x));
 }
 
-// 0 -> зелёный, 1 -> красный
-// Сделали цвета "светлее" и "зеленее":
-// - меньше красного на низких t
-// - зелёный держится выше дольше
-// - добавили небольшую "подсветку" (mix с белым)
-function colorGreenToRed(t: number) {
+function quantile(sorted: number[], q: number) {
+  if (!sorted.length) return 0;
+  const pos = (sorted.length - 1) * q;
+  const base = Math.floor(pos);
+  const rest = pos - base;
+  const a = sorted[base];
+  const b = sorted[Math.min(base + 1, sorted.length - 1)];
+  return a + (b - a) * rest;
+}
+
+/**
+ * Дискретные зоны (визуально чисто):
+ * 0: ОК (зелёный, но очень прозрачный)
+ * 1: Наблюдать (жёлтый)
+ * 2: Удобрять (оранжевый)
+ * 3: Срочно (красный, плотнее + обводка)
+ *
+ * Пороги сдвинуты так, чтобы зелёного было больше (до ~0.60).
+ */
+function classifyNeed(t: number) {
   t = clamp01(t);
+  if (t < 0.60) return 0; // ОК (больше зелёного)
+  if (t < 0.78) return 1; // Наблюдать
+  if (t < 0.90) return 2; // Удобрять
+  return 3; // Срочно
+}
 
-  // сдвигаем шкалу, чтобы зелёный доминировал дольше
-  const tt = Math.pow(t, 1.35); // >1 => больше зелёного при средних значениях
-
-  // базовый градиент (приглушённый красный, усиленный зелёный)
-  let r = Math.round(220 * tt); // вместо 255
-  let g = Math.round(255 * (1 - tt) + 30); // чуть больше зелёного
-  let b = 0;
-
-  // "осветляем" цвет: смешиваем с белым на 22%
-  const mix = 0.22;
-  r = Math.round(r + (255 - r) * mix);
-  g = Math.round(g + (255 - g) * mix);
-  b = Math.round(b + (255 - b) * mix);
-
-  return `rgb(${r},${g},${b})`;
+function styleForClass(cls: number) {
+  // Более "чистая" палитра + контролируемая прозрачность
+  // ОК-зона есть, но очень лёгкая, чтобы не "засорять" карту.
+  switch (cls) {
+    case 0: // зелёный (почти прозрачно)
+      return {
+        fillColor: "rgba(34, 197, 94, 0.10)", // green-500
+        fillOpacity: 1,
+        stroke: false,
+        color: undefined,
+        weight: 0,
+        opacity: 0,
+      };
+    case 1: // жёлтый
+      return {
+        fillColor: "rgba(250, 204, 21, 0.18)", // amber-400
+        fillOpacity: 1,
+        stroke: false,
+        color: undefined,
+        weight: 0,
+        opacity: 0,
+      };
+    case 2: // оранжевый
+      return {
+        fillColor: "rgba(249, 115, 22, 0.24)", // orange-500
+        fillOpacity: 1,
+        stroke: false,
+        color: undefined,
+        weight: 0,
+        opacity: 0,
+      };
+    default: // 3 красный + лёгкая обводка (чтобы читалось как "срочно")
+      return {
+        fillColor: "rgba(239, 68, 68, 0.32)", // red-500
+        fillOpacity: 1,
+        stroke: true,
+        color: "rgba(220, 38, 38, 0.60)", // red-600
+        weight: 1.2,
+        opacity: 1,
+      };
+  }
 }
 
 export default function InteractiveMap({ field, pnc }: InteractiveMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const gridLayerRef = useRef<L.LayerGroup | null>(null);
-
-  // нужен, чтобы перерисовать квадраты, если pnc пришёл раньше карты
   const [mapVersion, setMapVersion] = useState(0);
 
-  // Инициализация Leaflet-карты (фон + границы поля)
   useEffect(() => {
     if (!mapContainerRef.current || !field.boundary || field.boundary.length < 3) return;
 
-    // пересоздаём карту при смене поля/границы
     if (mapRef.current) {
       mapRef.current.remove();
       mapRef.current = null;
@@ -73,8 +114,6 @@ export default function InteractiveMap({ field, pnc }: InteractiveMapProps) {
     const map = L.map(mapContainerRef.current, {
       zoomControl: false,
       attributionControl: false,
-
-      // как у тебя: блокируем интеракции
       dragging: false,
       scrollWheelZoom: false,
       doubleClickZoom: false,
@@ -84,35 +123,32 @@ export default function InteractiveMap({ field, pnc }: InteractiveMapProps) {
       touchZoom: false,
     });
 
-    // блокируем события мыши на контейнере Leaflet (если ты так и хочешь)
+    // карта как фон
     const container = map.getContainer();
-    container.style.pointerEvents = 'none';
-    container.style.userSelect = 'none';
-    container.style.touchAction = 'none';
+    container.style.pointerEvents = "none";
+    container.style.userSelect = "none";
+    container.style.touchAction = "none";
 
-    // центрируем по границе
     try {
       map.fitBounds(L.latLngBounds(field.boundary), { padding: [40, 40] });
     } catch {
       map.setView([55.7558, 37.6173], 15);
     }
 
-    // OSM
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors',
+      attribution: "&copy; OpenStreetMap contributors",
     }).addTo(map);
 
-    // границы поля (чуть легче/прозрачнее тоже)
+    // границы поля
     L.polygon(field.boundary, {
-      color: '#66d771',
+      color: "rgba(102, 215, 113, 0.85)",
       weight: 3,
-      fillColor: '#2b8d35',
-      fillOpacity: 0.10,
-      opacity: 0.80,
+      fillColor: "rgba(43, 141, 53, 0.10)",
+      fillOpacity: 0.08,
+      opacity: 1,
     }).addTo(map);
 
-    // слой сетки
     gridLayerRef.current = L.layerGroup().addTo(map);
 
     mapRef.current = map;
@@ -125,56 +161,50 @@ export default function InteractiveMap({ field, pnc }: InteractiveMapProps) {
     };
   }, [field.id, field.boundary]);
 
-  // Отрисовка квадратов от бекенда (lon/lat/pred)
   useEffect(() => {
     const map = mapRef.current;
     const layer = gridLayerRef.current;
-
-    // диагностические логи (можно потом удалить)
-    console.log('[InteractiveMap] map ready?', !!map, 'layer?', !!layer);
-    console.log('[InteractiveMap] pnc cells:', pnc?.lon?.length ?? 0);
-
     if (!map || !layer) return;
 
     layer.clearLayers();
 
-    if (!pnc || !pnc.lon?.length || !pnc.pred?.length) return;
+    if (!pnc || !pnc.lon?.length || !pnc.lat?.length || !pnc.pred?.length) return;
 
     const preds = pnc.pred;
-    const min = Math.min(...preds);
-    const max = Math.max(...preds);
-    const denom = (max - min) || 1;
 
-    console.log('[InteractiveMap] pred min/max:', min, max);
+    // масштаб по хвостам, чтобы не ломалось выбросами
+    const sorted = [...preds].sort((a, b) => a - b);
+    const lo = quantile(sorted, 0.05);
+    const hi = quantile(sorted, 0.95);
+    const denom = (hi - lo) || 1;
 
-    const cellSizeM = pnc.cell_size_m ?? 20;
+    const cellSizeM = pnc.cell_size_m ?? 10;
 
     for (let i = 0; i < pnc.lon.length; i++) {
       const lon = pnc.lon[i];
       const lat = pnc.lat[i];
       const pred = pnc.pred[i];
 
-      const t = (pred - min) / denom;
-      const fill = colorGreenToRed(t);
+      // t=0 хорошо, t=1 плохо/удобрять
+      // если наоборот — инвертни:
+      // const t = 1 - clamp01((pred - lo) / denom);
+      const t = clamp01((pred - lo) / denom);
+
+      const cls = classifyNeed(t);
+      const st = styleForClass(cls);
 
       const center = L.latLng(lat, lon);
-      const bounds = center.toBounds(cellSizeM);
+      const bounds = center.toBounds(cellSizeM / 2);
 
       const rect = L.rectangle(bounds, {
-        color: fill,
-        fillColor: fill,
-
-        // было 0.55 — сделали более прозрачным
-        fillOpacity: 0.28,
-
-        // было 1 — чуть тоньше, чтобы легче выглядело
-        weight: 0.8,
-
-        // было 0.85 — тоже чуть прозрачнее контур
-        opacity: 0.45,
+        fillColor: st.fillColor,
+        fillOpacity: st.fillOpacity,
+        stroke: st.stroke,
+        color: st.color,
+        weight: st.weight,
+        opacity: st.opacity,
+        className: "pnc-cell",
       });
-
-      rect.bindTooltip(`pred: ${pred.toFixed(3)}`, { sticky: true });
 
       rect.addTo(layer);
     }
@@ -197,14 +227,11 @@ export default function InteractiveMap({ field, pnc }: InteractiveMapProps) {
 
   return (
     <div className="relative h-full w-full bg-[#131613]">
-      <div ref={mapContainerRef} className="absolute inset-0" style={{ height: '100%', width: '100%' }} />
+      <div ref={mapContainerRef} className="absolute inset-0" style={{ height: "100%", width: "100%" }} />
+
       <style jsx global>{`
-        /* на всякий случай: если нужно полностью отключить события на leaflet */
-        .leaflet-container,
-        .leaflet-container * {
-          pointer-events: none !important;
-          user-select: none !important;
-          touch-action: none !important;
+        .pnc-cell {
+          mix-blend-mode: normal;
         }
       `}</style>
     </div>
