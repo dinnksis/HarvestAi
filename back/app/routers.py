@@ -27,8 +27,8 @@ class PNCRequest(BaseModel):
     project_id: str = "harvestai-482321"
     date_start: str = "2024-08-10"
     date_end: str = "2024-09-29"
-    cell_size_m: int = 20
-    max_cloud_pct: int = 20
+    cell_size_m: int = 2
+    max_cloud_pct: int = 40
     rededge_band: Literal["B5", "B6", "B7"] = "B5"
     composite: Literal["median", "least_cloudy_mosaic"] = "median"
 
@@ -76,7 +76,7 @@ def predict_pnc(req: PNCRequest):
     lon = res.lonlat_pred[:, 0].tolist()
     lat = res.lonlat_pred[:, 1].tolist()
     pred = res.lonlat_pred[:, 2].tolist()
-
+    print(pred)
     return {
         "lon": lon,
         "lat": lat,

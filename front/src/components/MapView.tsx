@@ -17,11 +17,14 @@ interface Field {
 interface MapViewProps {
   field: Field;
 }
+type PncResponse = {
+  lon: number[];
+  lat: number[];
+  pred: number[];
+  cell_size_m?: number;
+  meta?: any;
+};
 
-export default function MapView({ field }: MapViewProps) {
-  return (
-    <div className="relative h-full">
-      <InteractiveMap field={field} />
-    </div>
-  );
+export default function MapView({ field, pnc }: { field: Field; pnc: PncResponse | null }) {
+  return <InteractiveMap field={field} pnc={pnc} />;
 }

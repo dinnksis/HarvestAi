@@ -21,7 +21,6 @@ interface DashboardProps {
   onLogout: () => void;
 }
 
-// УБРАЛИ "fertilizer-map" - теперь всё в одной вкладке "map"
 type View = "fields" | "map" | "recommendations" | "reports" | "draw-boundary";
 
 interface Field {
@@ -33,8 +32,16 @@ interface Field {
   ndvi: number;
   status: "healthy" | "warning" | "attention";
   hasRecommendations: boolean;
-  boundary?: [number, number][];
+  boundary?: [number, number][]; // [lat,lng]
 }
+
+export type PncResponse = {
+  lon: number[];
+  lat: number[];
+  pred: number[];
+  cell_size_m?: number;
+  meta?: any;
+};
 
 const initialFields: Field[] = [
   {
@@ -92,22 +99,16 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
   const [fields, setFields] = useState<Field[]>(initialFields);
   const [showAddField, setShowAddField] = useState(false);
-  const [drawingField, setDrawingField] = useState<{
-    name: string;
-    cropType: string;
-  } | null>(null);
+  const [drawingField, setDrawingField] = useState<{ name: string; cropType: string } | null>(null);
+
+  // ВАЖНО: храним результат бекенда для карты
+  const [pnc, setPnc] = useState<PncResponse | null>(null);
 
   const selectedField = fields.find((f) => f.id === selectedFieldId);
 
-  const handleAddField = (fieldData: {
-    name: string;
-    cropType: string;
-    skipSave?: boolean;
-  }) => {
-    if (fieldData.skipSave) {
-      return;
-    }
-    
+  const handleAddField = (fieldData: { name: string; cropType: string; skipSave?: boolean }) => {
+    if (fieldData.skipSave) return;
+
     const newField: Field = {
       id: String(fields.length + 1),
       name: fieldData.name,
@@ -118,26 +119,22 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       status: "healthy",
       hasRecommendations: false,
     };
+
     setFields([...fields, newField]);
     setShowAddField(false);
-    
+
     toast.success(`Поле "${fieldData.name}" добавлено (без границ)`);
   };
 
-  const handleStartDrawing = (fieldData: {
-    name: string;
-    cropType: string;
-  }) => {
+  const handleStartDrawing = (fieldData: { name: string; cropType: string }) => {
     setDrawingField(fieldData);
-    setShowAddField(false); // Закрываем диалог
+    setShowAddField(false);
     setCurrentView("draw-boundary");
     toast.info(`Теперь отметьте границы поля "${fieldData.name}" на карте`);
   };
 
-  const handleBoundaryComplete = (
-    boundary: [number, number][],
-    calculatedArea: number
-  ) => {
+  // ВАЖНО: теперь принимаем 3-й аргумент pncRes
+  const handleBoundaryComplete = (boundary: [number, number][], calculatedArea: number, pncRes: PncResponse) => {
     if (!drawingField) return;
 
     const newField: Field = {
@@ -149,34 +146,37 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       ndvi: 0,
       status: "healthy",
       hasRecommendations: false,
-      boundary: boundary,
+      boundary,
     };
 
     setFields([...fields, newField]);
-    setDrawingField(null);
-    setCurrentView("fields");
 
-    toast.success(
-      `Поле "${drawingField.name}" создано! Площадь: ${newField.area.toFixed(2)} га`
-    );
+    // сохранить pnc для карты
+    setPnc(pncRes);
+
+    // выбрать новое поле и открыть карту
+    setSelectedFieldId(newField.id);
+    setDrawingField(null);
+    setCurrentView("map");
+
+    toast.success(`Поле "${newField.name}" создано! Площадь: ${newField.area.toFixed(2)} га`);
   };
 
   const handleFieldSelect = (fieldId: string) => {
     setSelectedFieldId(fieldId);
+
+    // ВАЖНО: при переключении поля сбрасываем сетку,
+    // иначе можешь увидеть квадраты от другого поля
+    setPnc(null);
+
     setCurrentView("map");
   };
 
   const handleRequestData = (fieldId: string) => {
     const updatedFields = fields.map((f) =>
-      f.id === fieldId
-        ? {
-            ...f,
-            lastUpdate: new Date().toISOString().split("T")[0],
-          }
-        : f
+      f.id === fieldId ? { ...f, lastUpdate: new Date().toISOString().split("T")[0] } : f
     );
     setFields(updatedFields);
-    
     toast.success("Данные обновлены");
   };
 
@@ -206,8 +206,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             <MapPin className="size-5 mr-2" />
             Мои поля
           </Button>
-          
-          {/* ОДНА кнопка "Карта поля" - теперь включает и NDVI и удобрения */}
+
           <Button
             variant={currentView === "map" ? "secondary" : "ghost"}
             className={`w-full justify-start ${
@@ -221,7 +220,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             <Leaf className="size-5 mr-2" />
             Карта поля
           </Button>
-          
+
           <Button
             variant={currentView === "recommendations" ? "secondary" : "ghost"}
             className={`w-full justify-start ${
@@ -235,7 +234,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             <TrendingUp className="size-5 mr-2" />
             Рекомендации
           </Button>
-          
+
           <Button
             variant={currentView === "reports" ? "secondary" : "ghost"}
             className={`w-full justify-start ${
@@ -255,7 +254,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             <p className="text-white text-sm">Иван Петров</p>
             <p className="text-[#b2b3b2] text-xs">ivan@example.com</p>
           </div>
-          
+
           <Button
             variant="ghost"
             className="w-full justify-start text-[#b2b3b2] hover:text-[#66d771]"
@@ -276,9 +275,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               <div className="flex items-center justify-between mb-8">
                 <div>
                   <h1 className="text-white text-3xl mb-2">Мои поля</h1>
-                  <p className="text-[#b2b3b2]">
-                    Управляйте своими полями и отслеживайте их состояние
-                  </p>
+                  <p className="text-[#b2b3b2]">Управляйте своими полями и отслеживайте их состояние</p>
                 </div>
                 <Button
                   onClick={() => setShowAddField(true)}
@@ -288,19 +285,16 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   Добавить поле
                 </Button>
               </div>
-              <FieldsList
-                fields={fields}
-                onFieldSelect={handleFieldSelect}
-                onRequestData={handleRequestData}
-              />
+
+              <FieldsList fields={fields} onFieldSelect={handleFieldSelect} onRequestData={handleRequestData} />
             </div>
           </div>
         )}
 
-        {/* View: Карта поля (теперь включает и NDVI и удобрения) */}
+        {/* View: Карта поля */}
         {currentView === "map" && selectedField && (
           <div className="h-full">
-            <MapView field={selectedField} />
+            <MapView field={selectedField} pnc={pnc} />
           </div>
         )}
 
@@ -321,7 +315,6 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         {/* View: Рисование границ */}
         {currentView === "draw-boundary" && drawingField && (
           <div className="h-full flex flex-col">
-            {/* Компактный заголовок */}
             <div className="flex-shrink-0 bg-[#0c0e0c] border-b border-[#2b8d35]/20 p-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
@@ -339,8 +332,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   </Button>
                   <div>
                     <h2 className="text-white text-xl">
-                      Рисование границ:{" "}
-                      <span className="text-[#66d771]">{drawingField.name}</span>
+                      Рисование границ: <span className="text-[#66d771]">{drawingField.name}</span>
                     </h2>
                     <p className="text-sm text-[#b2b3b2]">
                       Кликайте на карте чтобы добавить точки. Минимум 3 точки.
@@ -348,9 +340,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-[#b2b3b2]">
-                    Культура: {drawingField.cropType}
-                  </span>
+                  <span className="text-sm text-[#b2b3b2]">Культура: {drawingField.cropType}</span>
                   <Button
                     onClick={() => {
                       setDrawingField(null);
@@ -366,10 +356,8 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               </div>
             </div>
 
-            {/* Карта занимает всё оставшееся пространство */}
             <div className="flex-1">
               <FieldBoundaryMap
-                key={`field-boundary-${drawingField.name}-${Date.now()}`}
                 fieldName={drawingField.name}
                 onBoundaryComplete={handleBoundaryComplete}
                 onCancel={() => {
@@ -382,7 +370,6 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         )}
       </main>
 
-      {/* Add Field Dialog */}
       <AddFieldDialog
         open={showAddField}
         onOpenChange={setShowAddField}
