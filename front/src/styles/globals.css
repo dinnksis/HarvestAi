@@ -753,3 +753,20 @@ svg.leaflet-zoom-animated {
     print-color-adjust: exact;
   }
 }
+
+
+/* В глобальные стили или инлайн */
+.leaflet-container {
+  pointer-events: none !important;
+  user-select: none !important;
+}
+
+.leaflet-map-pane,
+.leaflet-tile-pane,
+.leaflet-overlay-pane,
+.leaflet-shadow-pane,
+.leaflet-marker-pane,
+.leaflet-tooltip-pane,
+.leaflet-popup-pane {
+  pointer-events: none !important;
+}

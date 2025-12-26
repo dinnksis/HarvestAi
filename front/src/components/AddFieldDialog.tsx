@@ -8,24 +8,39 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 interface AddFieldDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onAddField: (fieldData: { name: string; area: number; cropType: string }) => void;
+  onAddField: (fieldData: { 
+    name: string; 
+    cropType: string;
+    skipSave?: boolean;
+  }) => void;
+  onDrawBoundary?: (fieldData: { name: string; cropType: string }) => void;
 }
 
-export default function AddFieldDialog({ open, onOpenChange, onAddField }: AddFieldDialogProps) {
+export default function AddFieldDialog({ 
+  open, 
+  onOpenChange, 
+  onAddField,
+  onDrawBoundary 
+}: AddFieldDialogProps) {
   const [name, setName] = useState('');
-  const [area, setArea] = useState('');
   const [cropType, setCropType] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onAddField({
+    
+    const fieldData = {
       name,
-      area: parseFloat(area),
       cropType,
-    });
-    // Reset form
+    };
+    
+    if (onDrawBoundary) {
+      onDrawBoundary(fieldData);
+    } else {
+      onAddField(fieldData);
+    }
+    
+    // Сбрасываем форму
     setName('');
-    setArea('');
     setCropType('');
   };
 
@@ -35,7 +50,9 @@ export default function AddFieldDialog({ open, onOpenChange, onAddField }: AddFi
         <DialogHeader>
           <DialogTitle>Добавить новое поле</DialogTitle>
           <DialogDescription>
-            Заполните информацию о вашем поле. Вы сможете отметить его границы на карте после создания.
+            {onDrawBoundary 
+              ? "Заполните основную информацию. Площадь будет рассчитана автоматически после выбора границ."
+              : "Заполните информацию о вашем поле."}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -50,19 +67,7 @@ export default function AddFieldDialog({ open, onOpenChange, onAddField }: AddFi
               required
             />
           </div>
-          <div>
-            <Label htmlFor="field-area" className="text-[#b2b3b2]">Площадь (га)</Label>
-            <Input
-              id="field-area"
-              type="number"
-              step="0.1"
-              value={area}
-              onChange={(e) => setArea(e.target.value)}
-              placeholder="12.5"
-              className="bg-[#1a1d1a] border-[#2b8d35]/20 text-white"
-              required
-            />
-          </div>
+          
           <div>
             <Label htmlFor="crop-type" className="text-[#b2b3b2]">Тип культуры</Label>
             <Select value={cropType} onValueChange={setCropType} required>
@@ -80,11 +85,15 @@ export default function AddFieldDialog({ open, onOpenChange, onAddField }: AddFi
               </SelectContent>
             </Select>
           </div>
+          
           <div className="bg-[#2b8d35]/10 border border-[#2b8d35]/20 rounded-lg p-3">
             <p className="text-[#b2b3b2] text-sm">
-              После добавления поля вы сможете отметить его точные границы на интерактивной карте.
+              {onDrawBoundary
+                ? "Площадь будет автоматически рассчитана по границам поля."
+                : "Вы сможете указать точные границы поля позже."}
             </p>
           </div>
+          
           <div className="flex gap-2">
             <Button
               type="button"
@@ -98,7 +107,7 @@ export default function AddFieldDialog({ open, onOpenChange, onAddField }: AddFi
               type="submit"
               className="flex-1 bg-[#2b8d35] hover:bg-[#66d771] text-[#0c0e0c]"
             >
-              Добавить поле
+              {onDrawBoundary ? 'Далее: выбрать границы' : 'Добавить поле'}
             </Button>
           </div>
         </form>
