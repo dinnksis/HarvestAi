@@ -27,27 +27,75 @@ function clamp01(x: number) {
   return Math.max(0, Math.min(1, x));
 }
 
-// 0 -> зелёный, 1 -> красный
-function colorGreenToRed(t: number) {
+// 0..1 -> rgb
+function colorGreenToRedRGB(t: number): [number, number, number] {
   t = clamp01(t);
   const r = Math.round(255 * t);
   const g = Math.round(255 * (1 - t));
-  return `rgb(${r},${g},0)`;
+  return [r, g, 0];
+}
+
+// более “зелёный заметный” вариант: растягиваем низ
+function applyGamma(t: number, gamma: number) {
+  t = clamp01(t);
+  return Math.pow(t, gamma);
+}
+
+// IDW интерполяция
+function idwValue(
+  x: number,
+  y: number,
+  pts: { x: number; y: number; v: number }[],
+  power = 2,
+  k = 24
+) {
+  // берём k ближайших (по квадрату расстояния), чтобы было быстрее
+  // простая стратегия: один проход, накапливаем k лучших
+  const best: { d2: number; v: number }[] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const dx = x - pts[i].x;
+    const dy = y - pts[i].y;
+    const d2 = dx * dx + dy * dy;
+
+    if (d2 < 1e-9) return pts[i].v; // попали в точку
+
+    if (best.length < k) {
+      best.push({ d2, v: pts[i].v });
+      if (best.length === k) best.sort((a, b) => a.d2 - b.d2);
+      continue;
+    }
+
+    // если лучше худшего
+    if (d2 < best[best.length - 1].d2) {
+      best[best.length - 1] = { d2, v: pts[i].v };
+      // восстановим порядок (k маленький — ок)
+      best.sort((a, b) => a.d2 - b.d2);
+    }
+  }
+
+  let wSum = 0;
+  let vSum = 0;
+  for (const it of best) {
+    const w = 1 / Math.pow(it.d2, power / 2);
+    wSum += w;
+    vSum += w * it.v;
+  }
+  return wSum ? vSum / wSum : 0;
 }
 
 export default function InteractiveMap({ field, pnc }: InteractiveMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
-  const gridLayerRef = useRef<L.LayerGroup | null>(null);
 
-  // нужен, чтобы перерисовать квадраты, если pnc пришёл раньше карты
+  const rasterOverlayRef = useRef<L.ImageOverlay | null>(null);
+  const boundaryLayerRef = useRef<L.Polygon | null>(null);
+
   const [mapVersion, setMapVersion] = useState(0);
 
-  // Инициализация Leaflet-карты (фон + границы поля)
+  // Инициализация карты
   useEffect(() => {
     if (!mapContainerRef.current || !field.boundary || field.boundary.length < 3) return;
 
-    // пересоздаём карту при смене поля/границы
     if (mapRef.current) {
       mapRef.current.remove();
       mapRef.current = null;
@@ -56,8 +104,6 @@ export default function InteractiveMap({ field, pnc }: InteractiveMapProps) {
     const map = L.map(mapContainerRef.current, {
       zoomControl: false,
       attributionControl: false,
-
-      // как у тебя: блокируем интеракции
       dragging: false,
       scrollWheelZoom: false,
       doubleClickZoom: false,
@@ -67,27 +113,24 @@ export default function InteractiveMap({ field, pnc }: InteractiveMapProps) {
       touchZoom: false,
     });
 
-    // блокируем события мыши на контейнере Leaflet (если ты так и хочешь)
     const container = map.getContainer();
     container.style.pointerEvents = 'none';
     container.style.userSelect = 'none';
     container.style.touchAction = 'none';
 
-    // центрируем по границе
     try {
       map.fitBounds(L.latLngBounds(field.boundary), { padding: [40, 40] });
     } catch {
       map.setView([55.7558, 37.6173], 15);
     }
 
-    // OSM
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors',
     }).addTo(map);
 
     // границы поля
-    L.polygon(field.boundary, {
+    const boundary = L.polygon(field.boundary, {
       color: '#66d771',
       weight: 3,
       fillColor: '#2b8d35',
@@ -95,8 +138,7 @@ export default function InteractiveMap({ field, pnc }: InteractiveMapProps) {
       opacity: 0.85,
     }).addTo(map);
 
-    // слой сетки
-    gridLayerRef.current = L.layerGroup().addTo(map);
+    boundaryLayerRef.current = boundary;
 
     mapRef.current = map;
     setMapVersion((v) => v + 1);
@@ -104,59 +146,117 @@ export default function InteractiveMap({ field, pnc }: InteractiveMapProps) {
     return () => {
       map.remove();
       mapRef.current = null;
-      gridLayerRef.current = null;
+      rasterOverlayRef.current = null;
+      boundaryLayerRef.current = null;
     };
   }, [field.id, field.boundary]);
 
-  // Отрисовка квадратов от бекенда (lon/lat/pred)
+  // Рисуем растровый overlay
   useEffect(() => {
     const map = mapRef.current;
-    const layer = gridLayerRef.current;
+    const boundary = boundaryLayerRef.current;
 
-    // диагностические логи (можно потом удалить)
-    console.log('[InteractiveMap] map ready?', !!map, 'layer?', !!layer);
+    console.log('[InteractiveMap] map ready?', !!map);
     console.log('[InteractiveMap] pnc cells:', pnc?.lon?.length ?? 0);
 
-    if (!map || !layer) return;
+    if (!map || !boundary) return;
 
-    layer.clearLayers();
+    // удаляем старый overlay
+    if (rasterOverlayRef.current) {
+      map.removeLayer(rasterOverlayRef.current);
+      rasterOverlayRef.current = null;
+    }
 
     if (!pnc || !pnc.lon?.length || !pnc.pred?.length) return;
 
+    // bounds поля
+    const bounds = boundary.getBounds();
+
+    // Настройки качества:
+    // чем больше — тем плавнее, но тем тяжелее.
+    const W = 420; // ширина canvas в пикселях
+    const H = 420; // высота canvas
+    // скорость/качество интерполяции:
+    const K_NEAREST = 24;
+    const POWER = 2.0;
+
+    // нормализация значений (лучше по перцентилям, чтобы зелёный не исчезал)
     const preds = pnc.pred;
-    const min = Math.min(...preds);
-    const max = Math.max(...preds);
-    const denom = (max - min) || 1;
+    const sorted = [...preds].sort((a, b) => a - b);
+    const q = (p: number) => sorted[Math.floor((sorted.length - 1) * p)];
+    const lo = q(0.05);
+    const hi = q(0.95);
+    const denom = (hi - lo) || 1;
 
-    console.log('[InteractiveMap] pred min/max:', min, max);
+    // Предрасчёт точек в координатах canvas
+    // x: 0..W-1 по долготе, y: 0..H-1 по широте (инвертировано)
+    const west = bounds.getWest();
+    const east = bounds.getEast();
+    const south = bounds.getSouth();
+    const north = bounds.getNorth();
 
-    const cellSizeM = pnc.cell_size_m ?? 20;
-
-    for (let i = 0; i < pnc.lon.length; i++) {
-      const lon = pnc.lon[i];
+    const pts = pnc.lon.map((lon, i) => {
       const lat = pnc.lat[i];
-      const pred = pnc.pred[i];
+      const vRaw = (pnc.pred[i] - lo) / denom;
+      const v01 = clamp01(vRaw);
 
-      const t = (pred - min) / denom;
-      const fill = colorGreenToRed(t);
+      const x = ((lon - west) / (east - west)) * (W - 1);
+      const y = ((north - lat) / (north - south)) * (H - 1); // вверх=0
 
-      const center = L.latLng(lat, lon);
-      const bounds = center.toBounds(cellSizeM);
+      return { x, y, v: v01 };
+    });
 
-      const rect = L.rectangle(bounds, {
-        color: fill,
-        fillColor: fill,
-        fillOpacity: 0.55,
-        weight: 1,
-        opacity: 0.85,
-      });
+    // canvas -> imageData
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
-      rect.bindTooltip(`pred: ${pred.toFixed(3)}`, { sticky: true });
+    const img = ctx.createImageData(W, H);
+    const data = img.data;
 
-      rect.addTo(layer);
+    // “маска поля”: чтобы не красить за пределами полигона.
+    // Проверяем для каждого пикселя, внутри ли он boundary.
+    // Оптимизация: используем Leaflet point-in-polygon через latLng + contains?
+    // Leaflet polygon: boundary._containsPoint работает в пиксельных координатах карты,
+    // поэтому проще: делаем грубо — красим весь bounds.
+    // Если хочешь строго по полигону — скажи, добавлю точную маску.
+    const gamma = 1.6; // >1 => больше зелёного
+    const alpha = 190; // 0..255
+
+    // основной цикл: IDW интерполяция
+    for (let py = 0; py < H; py++) {
+      for (let px = 0; px < W; px++) {
+        let v = idwValue(px, py, pts, POWER, K_NEAREST);
+
+        // усиливаем зелёный диапазон
+        v = applyGamma(v, gamma);
+
+        const [r, g, b] = colorGreenToRedRGB(v);
+
+        const idx = (py * W + px) * 4;
+        data[idx + 0] = r;
+        data[idx + 1] = g;
+        data[idx + 2] = b;
+        data[idx + 3] = alpha;
+      }
     }
 
-    toast.success(`Отрисовано клеток: ${pnc.lon.length}`);
+    ctx.putImageData(img, 0, 0);
+
+    const url = canvas.toDataURL('image/png');
+
+    const overlay = L.imageOverlay(url, bounds, {
+      opacity: 0.8,
+      interactive: false,
+      crossOrigin: false,
+    });
+
+    overlay.addTo(map);
+    rasterOverlayRef.current = overlay;
+
+    toast.success(`Растер готов (pixels: ${W}x${H})`);
   }, [pnc, mapVersion]);
 
   if (!field.boundary || field.boundary.length < 3) {
@@ -174,13 +274,8 @@ export default function InteractiveMap({ field, pnc }: InteractiveMapProps) {
 
   return (
     <div className="relative h-full w-full bg-[#131613]">
-      <div
-        ref={mapContainerRef}
-        className="absolute inset-0"
-        style={{ height: '100%', width: '100%' }}
-      />
-      <style jsx global>{`
-        /* на всякий случай: если нужно полностью отключить события на leaflet */
+      <div ref={mapContainerRef} className="absolute inset-0" style={{ height: '100%', width: '100%' }} />
+      <style>{`
         .leaflet-container,
         .leaflet-container * {
           pointer-events: none !important;
