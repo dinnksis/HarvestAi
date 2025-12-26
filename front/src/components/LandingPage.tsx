@@ -211,10 +211,10 @@ export default function LandingPage({ onGetStarted }: LandingPageProps) {
           <div className="grid md:grid-cols-2 gap-8">
             <Card className="bg-[#131613] border-[#2b8d35]/20">
               <CardContent className="p-8">
-                <h3 className="text-white text-2xl mb-4">Стартовый</h3>
+                <h3 className="text-white text-2xl mb-4">Бесплатно</h3>
                 <div className="mb-6">
-                  <span className="text-white text-4xl">₽2,500</span>
-                  <span className="text-[#b2b3b2]">/месяц</span>
+                  <span className="text-white text-4xl">14</span>
+                  <span className="text-[#b2b3b2]">дней</span>
                 </div>
                 <ul className="space-y-3 mb-8">
                   <li className="flex items-center gap-2 text-[#b2b3b2]">
@@ -245,9 +245,9 @@ export default function LandingPage({ onGetStarted }: LandingPageProps) {
                 <div className="bg-[#66d771] text-[#0c0e0c] px-3 py-1 rounded-full text-sm w-fit mb-4">
                   Популярный
                 </div>
-                <h3 className="text-white text-2xl mb-4">Профессиональный</h3>
+                <h3 className="text-white text-2xl mb-4">Подписка</h3>
                 <div className="mb-6">
-                  <span className="text-white text-4xl">₽5,000</span>
+                  <span className="text-white text-4xl">₽2,500</span>
                   <span className="text-[#b2b3b2]">/месяц</span>
                 </div>
                 <ul className="space-y-3 mb-8">
@@ -277,7 +277,7 @@ export default function LandingPage({ onGetStarted }: LandingPageProps) {
                   </li>
                 </ul>
                 <Button onClick={onGetStarted} className="w-full bg-[#66d771] hover:bg-[#2b8d35] text-[#0c0e0c]">
-                  Начать бесплатный пробный период
+                  Купить подписку
                 </Button>
               </CardContent>
             </Card>

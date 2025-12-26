@@ -106,7 +106,7 @@ async function predictPNC(polygonLonLat: LonLat[]): Promise<PncResponse> {
 }
 
 export default function FieldBoundaryMap({
-  initialCenter = [55.7558, 37.6173],
+  initialCenter = [45.9022, 42.1167],
   initialZoom = 13,
   onBoundaryComplete,
   onCancel,
