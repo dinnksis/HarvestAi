@@ -129,11 +129,10 @@ export default function FieldBoundaryMap({
     return Math.abs(area) * 11132 * 11132 * Math.cos(initialCenter[0] * Math.PI / 180) / 10000 / 2;
   };
 
-const API_BASE = "http://localhost:8000"; // где крутится FastAPI
+const API_BASE = "http://localhost:8000";
 
 async function predictPNC(polygonCoords) {
-// polygonCoords: [[lon,lat],[lon,lat],...,[lon,lat]] (последняя точка = первая)
-const body = {
+  const body = {
     coords: polygonCoords,
     project_id: "harvestai-482321",
     date_start: "2024-08-10",
@@ -142,43 +141,64 @@ const body = {
     max_cloud_pct: 20,
     rededge_band: "B5",
     composite: "median",
-    // nan_policy: "drop" // если добавишь
-};
+  };
 
-const r = await fetch(`${API_BASE}/pnc/predict`, {
+  const r = await fetch(`${API_BASE}/pnc/predict`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-});
+  });
 
-if (!r.ok) {
-    const err = await r.json().catch(() => ({}));
-    throw new Error(err.detail ?? `HTTP ${r.status}`);
+  // читаем текстом, чтобы видеть detail даже если это не JSON
+  const text = await r.text();
+  let payload = null;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch {
+    payload = null;
+  }
+
+  if (!r.ok) {
+    const detail = payload?.detail ?? text ?? `HTTP ${r.status}`;
+    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+  }
+
+  return payload; // { lon: [...], lat: [...], pred: [...], meta: {...} }
 }
 
-const data = await r.json();
-// data = { lon: [...], lat: [...], pred: [...], meta: {...} }
-return data;
+// если надо — замыкаем полигон (последняя точка = первая)
+function closePolygon(coords) {
+  if (!coords?.length) return coords;
+  const first = coords[0];
+  const last = coords[coords.length - 1];
+  const isClosed = first[0] === last[0] && first[1] === last[1];
+  return isClosed ? coords : [...coords, first];
 }
-  const handleComplete = () => {
-    if (points.length < 3) {
-      toast.error('Нужно минимум 3 точки для поля', {
-        position: 'top-right'
-      });
-      return;
-    }
-    try {
-        const res = predictPNC(points);
-        console.log(res.lon.length, res.pred.length);
-        // TODO: отрисовать на карте
-    } catch (e) {
-        alert(e.message);
-    }
+
+const handleComplete = async () => {
+  if (points.length < 3) {
+    toast.error("Нужно минимум 3 точки для поля", { position: "top-right" });
+    return;
+  }
+
+  try {
+    const coords = closePolygon(points);
+    const res = await predictPNC(coords);   // <-- ЖДЁМ БЕКЕНД
+
+    console.log(res.lon.length, res.pred.length);
+
+    // TODO: отрисовать на карте по res.lon/res.lat/res.pred
+    // drawSomething(res);
+
     const area = calculateArea(points);
-    onBoundaryComplete(points, area);
-  };
+    onBoundaryComplete(points, area); // или onBoundaryComplete(points, area, res)
+  } catch (e) {
+    console.error(e);
+    alert(e?.message ?? String(e));
+  }
+};
 
-  const resetDrawing = () => {
+const resetDrawing = () => {
     setPoints([]);
     setShowMinPointsAlert(false);
     toast.info('Рисование сброшено', {

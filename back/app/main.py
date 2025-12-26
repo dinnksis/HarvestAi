@@ -2,7 +2,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.pnc import router as pnc_router
+from app.routers import router as pnc_router
 
 app = FastAPI()
 

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Tuple
 import numpy as np
 import pandas as pd
-
+import joblib
 
 feature_names = ['VI.1', 'VI.2', 'VI.3', 'VI.4', 'VI.5', 'VI.6', 'VI.7', 'VI.8', 'VI.9', 'VI.10', 'VI.11', 'VI.12', 'VI.13', 'VI.14', 'VI.15', 'VI.16', 'VI.17', 'VI.18', 'VI.19', 'VI.20', 'VI.21', 'VI.22', 'VI.23', 'VI.24', 'VI.25', 'VI.26', 'VI.27', 'VI.28', 'VI.29', 'VI.30', 'VI.31', 'VI.32', 'VI.33', 'VI.34', 'VI.35', 'VI.36', 'VI.37', 'VI.38', 'VI.39', 'VI.40', 'VI.41', 'VI.42', 'VI.43']
 
@@ -91,35 +91,35 @@ def infer_pnc_from_gee_grid(
     nni_preds = compute_nni(preds, 18.16)
     return InferenceResult(preds=nni_preds, lonlat_pred=lonlat_pred, meta=meta)
 
-if __name__ == '__main__':
-    import joblib
+# if __name__ == '__main__':
+    # import joblib
 
-    from satellite.geo_engine import gee_vi43_grid_features
+    # from satellite.geo_engine import gee_vi43_grid_features
 
-    cat_loaded = joblib.load("./app/agropipe/ridge_pnc_pipeline.joblib")
+    # cat_loaded = joblib.load("./app/agropipe/ridge_pnc_pipeline.joblib")
 
-    coords = [
-        [37.61556, 55.75222],
-        [37.61800, 55.75280],
-        [37.62010, 55.75110],
-        [37.61720, 55.75050],
-        [37.61556, 55.75222],
-    ]
+    # coords = [
+    #     [37.61556, 55.75222],
+    #     [37.61800, 55.75280],
+    #     [37.62010, 55.75110],
+    #     [37.61720, 55.75050],
+    #     [37.61556, 55.75222],
+    # ]
 
-    X, names = gee_vi43_grid_features(
-        coords,
-        project_id="harvestai-482321",
-        date_start="2024-8-10",
-        date_end="2024-9-29",
-        cell_size_m=20,
-        max_cloud_pct=20,
-        rededge_band="B5",
-        composite="median",
-    )
+    # X, names = gee_vi43_grid_features(
+    #     coords,
+    #     project_id="harvestai-482321",
+    #     date_start="2024-8-10",
+    #     date_end="2024-9-29",
+    #     cell_size_m=20,
+    #     max_cloud_pct=20,
+    #     rededge_band="B5",
+    #     composite="median",
+    # )
 
-    res = infer_pnc_from_gee_grid(X, cat_loaded)
+    # res = infer_pnc_from_gee_grid(X, cat_loaded)
 
-    print(res.preds.shape)          # (N,)
-    print(res.preds[:5])          # (N,)
-    print(res.lonlat_pred[:5])      # lon, lat, pred
-    print(res.meta)
+    # print(res.preds.shape)          # (N,)
+    # print(res.preds[:5])          # (N,)
+    # print(res.lonlat_pred[:5])      # lon, lat, pred
+    # print(res.meta)

@@ -35,25 +35,27 @@ class PNCRequest(BaseModel):
 
 
 def _validate_polygon(coords: List[List[float]]) -> None:
-    if len(coords) < 4:
-        raise HTTPException(status_code=400, detail="coords must contain at least 4 points")
+    if len(coords) < 3:
+        print('coords must contain at least 3 points')
+        raise HTTPException(status_code=400, detail="coords must contain at least 3 points")
     for i, p in enumerate(coords):
         if not isinstance(p, (list, tuple)) or len(p) != 2:
+            print('coords[{i}] must be [lon, lat]')
             raise HTTPException(status_code=400, detail=f"coords[{i}] must be [lon, lat]")
         lon, lat = float(p[0]), float(p[1])
         if not (-180 <= lon <= 180 and -90 <= lat <= 90):
+            print('coords[{i}] has invalid lon/lat: {p}')
             raise HTTPException(status_code=400, detail=f"coords[{i}] has invalid lon/lat: {p}")
-    if coords[0] != coords[-1]:
-        raise HTTPException(status_code=400, detail="Polygon must be closed: coords[-1] must equal coords[0]")
 
 
 @router.post("/predict")
 def predict_pnc(req: PNCRequest):
     _validate_polygon(req.coords)
+    coords = req.coords + [req.coords[0]]
 
     try:
         X, _names = gee_vi43_grid_features(
-            req.coords,
+            coords,
             project_id=req.project_id,
             date_start=req.date_start,
             date_end=req.date_end,
