@@ -3,7 +3,7 @@ import InteractiveMap from './InteractiveMap';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import { Download, RefreshCw, Info } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface Field {
   id: string;
